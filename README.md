@@ -1,9 +1,10 @@
-# edbus-rp2040
-A library that implements the EDBUS protocol using the Raspberry Pi RP2040's PIO.
+# pico-edbus
+
+RPI Pico library that implements the EDBUS protocol.
 
 ## Tasks
 
-### Build
+### build
 
 Directory: build
 
@@ -12,7 +13,7 @@ cmake ..
 cmake --build . -j $(nproc)
 ```
 
-### Clean
+### clean
 
 ```bash
 rm -rf build

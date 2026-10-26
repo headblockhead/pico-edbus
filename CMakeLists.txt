@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 4.0.7)
 
 include(include_sdk.cmake)
-project(edbus-rp2040 C CXX ASM)
+project(pico-edbus C CXX ASM)
 pico_sdk_init()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -23,9 +23,9 @@ install(DIRECTORY include/ DESTINATION include)
 
 include(CMakePackageConfigHelpers)
 configure_package_config_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/edbus-rp2040-config.cmake.in
-  ${CMAKE_CURRENT_BINARY_DIR}/edbus-rp2040-config.cmake
-  INSTALL_DESTINATION lib/cmake/edbus-rp2040
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/pico-edbus-config.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/pico-edbus-config.cmake
+  INSTALL_DESTINATION lib/cmake/pico-edbus
 )
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/edbus-rp2040-config.cmake DESTINATION lib/cmake/edbus-rp2040)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pico-edbus-config.cmake DESTINATION lib/cmake/pico-edbus)

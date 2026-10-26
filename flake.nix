@@ -1,5 +1,5 @@
 {
-  description = "A library that implements the EDBUS protocol using the Raspberry Pi RP2040's PIO";
+  description = "RPI Pico library that implements the EDBUS protocol";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
   outputs =
@@ -19,8 +19,8 @@
           pkgs = pkgsForSystem system;
         in
         rec {
-          libedbus-rp2040 = pkgs.stdenv.mkDerivation {
-            name = "libedbus-rp2040";
+          pico-edbus = pkgs.stdenv.mkDerivation {
+            name = "pico-edbus";
             src = pkgs.lib.cleanSource ./.;
 
             nativeBuildInputs = with pkgs; [
@@ -34,7 +34,7 @@
             ];
             env.PICO_SDK_PATH = "${pkgs.pico-sdk}/lib/pico-sdk";
           };
-          default = libedbus-rp2040;
+          default = pico-edbus;
         }
       );
       devShells = forEachSystem (
@@ -45,7 +45,7 @@
         {
           default = pkgs.mkShell {
             inputsFrom = [
-              self.packages.${system}.libedbus-rp2040
+              self.packages.${system}.pico-edbus
             ];
             PICO_SDK_PATH = "${pkgs.pico-sdk}/lib/pico-sdk";
           };

@@ -5,12 +5,12 @@
   outputs =
     { self, nixpkgs, ... }:
     let
-      pkgsForSystem = system: import nixpkgs { inherit system; };
       supportedSystems = [
         "x86_64-linux"
         "aarch64-linux"
       ];
       forEachSystem = nixpkgs.lib.genAttrs supportedSystems;
+      pkgsForSystem = system: import nixpkgs { inherit system; };
     in
     {
       packages = forEachSystem (

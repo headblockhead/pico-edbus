@@ -5,111 +5,46 @@
 .define public edbus_pio_clock (48 * 1000 * 1000) ; Run the edbus PIO state
                                                   ; machines at 48MHz.
 
-.define public edbus_busy_irq 7   ; Use IRQ 7 to represent when the bus is
+.define public edbus_busy 7       ; Use IRQ 7 to represent when the bus is
                                   ; busy.
 
 .program edbus_tx                 ; The edbus_tx program begins here.
 
-.define public error_irq 0        ; Use IRQ 0 to represent an error to the CPU.
+.define public error 0            ; Use IRQ 0 to represent an error to the CPU.
 
-.define public done_irq 1         ; Use IRQ 1 to represent when a transmission
+.define public done 1             ; Use IRQ 1 to represent when a transmission
                                   ; completed successfully to the CPU.
 
-.side_set 1 opt pindirs           ; This program will optionally manipulate the
-                                  ; state of 1 pin simultaneously with an
-                                  ; instruction call. This is used here to
-                                  ; control the state of the EBC (clock) pin.
+.side_set 2 pindirs               ; This program will manipulate the state of 
+                                  ; 2 pins simultaneously with each instruction 
+                                  ; call. This is used here to control the  
+                                  ; state of both the EBD (data) pin and the
+                                  ; EBC (clock) pin.
 
-error:                            ; The 'error' label is jumped to if a 
-                                  ; transmission is abandoned.
+; todo: create delay amount variables?
 
-  irq wait error_irq              ; Set the error IRQ to alert the CPU to the 
-                                  ; error, so it can attempt retransmission,
-                                  ; then wait for the CPU to clear the IRQ.
-
-public entry_point:               ; The 'entry_point' label is where the 
-                                  ; program begins.
-
-.wrap_target                      ; When the .wrap position is reached,
-                                  ; execution will continue from .wrap_target.
-
-  pull block                      ; Take one word (32 bits) from the TX FIFO
-                                  ; and put it into the Output Shift Register
-                                  ; (OSR). If there is no data available from 
-                                  ; the TX FIFO, stall here until data becomes 
-                                  ; available.
-
-  wait 0 irq, edbus_busy_irq      ; If the edbus_busy_irq is not cleared, stall
-                                  ; here until it is. The edbus_busy_irq is
-                                  ; controlled by the edbus_rx program, and is
-                                  ; set whilst the bus is busy.
-
-  set pindirs, 0      [7] side 0  ; Set EBD and EBC low, then wait another 7
-                                  ; cycles. This indicates to all nodes on the
-                                  ; bus that a transmission is about to begin.
-
-  set x, 7                        ; Set register x to 7. Register x stores the
-                                  ; number of words to be transmitted minus 1
-                                  ; (8 - 1 = 7).
-write_word:
-  pull ifempty block              ; If all bits in the OSR have been consumed,
-                                  ; take a word from the TX FIFO. Otherwise,
-                                  ; proceed. If there is no data available 
-                                  ; from the TX FIFO when attempting to take a
-                                  ; word, stall here until data becomes 
-                                  ; available. However, stalling here for a
-                                  ; long time could be problematic, because the
-                                  ; bus would be blocked until the stall ends. 
-                                  ; To prevent this, all 8 words of each 
-                                  ; message should be transferred to the 
-                                  ; TX FIFO as close together as possible.
+word:
+ pull block             side 0b00 
 write_bit:
-  out y, 1                        ; Shift one bit out of the OSR, and write its
-                                  ; value into the y register.
-
-  jmp !y, write_zero              ; If the y register is 0, jump to 
-                                  ; 'write_zero'. Otherwise, fall through to
-                                  ; 'write_one'.
+ out y, 1               side 0b00
+ jmp !y write_zero      side 0b00
 write_one:
-  set pindirs, 1      [2] side 1  ; Set EBD and EBC high, then wait another 2
-                                  ; cycles. This communicates a '1' bit.
-
-  jmp pin, next_bit               ; Read the state of the EBD pin. If the pin
-                                  ; is high, a '1' has been communicated 
-                                  ; correctly, so jump to the 'next_bit' label.
-                                  ; However, if the pin is low, another node 
-                                  ; has likely started a transmission at the
-                                  ; same time as this one, and is currently
-                                  ; communicating a '0'. To avoid a collision,
-                                  ; this node should cease transmission by
-                                  ; falling through to the unconditional jump.
-
-  jmp error                       ; Jump to the 'error' label. 
+ nop                    side 0b11 [2]
+ jmp pin next_bit       side 0b11
+ irq wait error         side 0b11
+public entry_point:
+ pull block             side 0b11
+ wait 0 irq, edbus_busy side 0b11
+ jmp next_bit           side 0b10 [7]
 write_zero:
-  set pindirs, 0      [3] side 1  ; Set EBD low, and EBC high, then wait 
-                                  ; another 3 cycles. This communicates a '0'
-                                  ; bit. A 3 cycle delay is used when writing
-                                  ; a '0' bit so that 'write_one' and 
-                                  ; 'write_zero' take the same amount of time
-                                  ; to reach the 'next_bit' label.
-next_bit:                        
-  jmp !osre, write_bit    side 0  ; Set EBC low, then unless all 32 bits in the
-                                  ; OSR have been consumed, jump to the 
-                                  ; 'write_bit' label. Otherwise, fall through.
-next_word:
-  jmp x--, write_word             ; If the x register is not 0, jump to
-                                  ; 'write_word'. Otherwise, fall through.
-                                  ; Then, in either case, decrement x.
+ nop                    side 0b01 [3]
+next_bit:
+ jmp !osre write_bit    side 0b00
+ jmp x-- word           side 0b00
+ irq wait done          side 0b11 [7]
 
-  set pindirs, 1      [7] side 1  ; Set EBD and EBC high, then wait another 7
-                                  ; cycles. This indicates to all nodes on the
-                                  ; bus that the transmission has ended.
-                                  
-  irq wait done_irq               ; Set the done IRQ to alert the CPU that the
-                                  ; transmission completed successfully, then
-                                  ; wait for the CPU to clear the IRQ.
-
-.wrap                             ; Wrap back to the .wrap_target position.
+; after irq done,
+; (force INSTR) set x, 7 side 0b11
 
 % c-sdk {
 
@@ -208,14 +143,14 @@ reset:
 .wrap_target                      ; When the .wrap position is reached,
                                   ; execution will continue from .wrap_target.
 
-  irq clear edbus_busy_irq        ; Clear the edbus_busy_irq. This indicates to
+  irq clear edbus_busy            ; Clear the edbus_busy_irq. This indicates to
                                   ; edbus_tx that the bus is currently 
                                   ; inactive.
 wait_start:
   wait 0 pin, 1                   ; Wait for EBC to go low, potentially 
                                   ; indicating a start condition.
 
-  irq nowait edbus_busy_irq       ; Set the edbus_busy_irq to prevent edbus_tx
+  irq nowait edbus_busy           ; Set the edbus_busy_irq to prevent edbus_tx
                                   ; from starting a transmission whilst the bus
                                   ; is busy.
 

@@ -21,8 +21,6 @@
                                   ; state of both the EBD (data) pin and the
                                   ; EBC (clock) pin.
 
-; todo: create delay amount variables?
-
 word:
  pull block             side 0b00 
 write_bit:
@@ -43,30 +41,29 @@ next_bit:
  jmp x-- word           side 0b00
  irq wait done          side 0b11 [7]
 
-; after irq done,
-; (force INSTR) set x, 7 side 0b11
-
 % c-sdk {
 
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
+
+static inline void edbus_tx_resetup_after_irq(PIO pio, uint sm) {
+}
 
 // edbus_tx_program_init initialises the edbus_tx program.
 // pin_ebd and pin_ebc must be sequential: pin_ebc must be 1 after pin_ebd.
 static inline void edbus_tx_program_init(PIO pio, uint sm, uint offset, 
                                          uint pin_ebd, uint pin_ebc) {
     // EBC must be 1 after EBD, as it is referenced by its relative position
-    // from EBC in the edbus_rx assembly program.
+    // from EBC in both assembly programs.
     assert(pin_ebc == pin_ebd + 1);
 
     // Create a new state machine config.
     pio_sm_config c = edbus_tx_program_get_default_config(offset);
 
-    // Assign the EBD pin to the 'set pins' and 'set pindirs' instructions.
-    sm_config_set_set_pins(&c, pin_ebd, 1); 
     // Make the 'jmp pin' instruction read the state of the EBD pin.
     sm_config_set_jmp_pin(&c, pin_ebd); 
-    // Assign the EBC pin to the 'side 0' and 'side 1' side-set controls.
+    // Assign the EBD pin as the 1st pin controlled by the side-set. This 
+    // allows the EBC pin to be controlled as the 2nd side-set pin.
     sm_config_set_sideset_pins(&c, pin_ebc);
 
     // Join the 4 word deep RX and TX FIFO buffers into one large 8-deep 
@@ -132,6 +129,11 @@ static inline void edbus_tx_program_init(PIO pio, uint sm, uint offset,
 
     // Initialise the state machine at the entry_point label.
     pio_sm_init(pio, sm, offset + edbus_tx_offset_entry_point, &c);
+
+    // Set the value of x to 7.
+    pio_sm_exec(pio, sm,
+                pio_encode_set(pio_x, 7) | pio_encode_sideset(2, 0b11));
+
     // Enable the state machine.
     pio_sm_set_enabled(pio, sm, true);
 }

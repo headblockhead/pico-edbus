@@ -176,23 +176,26 @@ static void pio_irq_handler() {
 
     pio_sm_clear_fifos(config.pio, config.tx_sm);
 
-    pio_sm_exec(pio, sm,
+    pio_sm_exec(config.pio, config.tx_sm,
                 pio_encode_set(pio_x, 7) | pio_encode_sideset(2, 0b11));
+    pio_interrupt_clear(config.pio, edbus_tx_error_irq);
 
     config.event_handler(EDBUS_EVENT_TX_ARBITRATION_LOSS_RETRY);
 
     dma_channel_set_read_addr(config.dma_chan_tx, message_outbound, true);
-
-    pio_interrupt_clear(config.pio, edbus_tx_error_irq);
   }
   if (pio_interrupt_get(config.pio, edbus_tx_done_irq)) {
+    pio_sm_exec(config.pio, config.tx_sm,
+                pio_encode_set(pio_x, 7) | pio_encode_sideset(2, 0b11));
     pio_interrupt_clear(config.pio, edbus_tx_done_irq);
-    sem_release(&message_outbound_semaphore);
+
     config.event_handler(EDBUS_EVENT_TX_DONE);
+
     // The message_outbound_semaphore can be released after the message is
     // finished transmitting, as it is no longer possible for an arbitration
     // loss error to require the message stored in the message_outbound buffer
     // to be retransmitted.
+    sem_release(&message_outbound_semaphore);
   }
 }
 

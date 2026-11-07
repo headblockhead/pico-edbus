@@ -5,14 +5,14 @@
 .define public edbus_pio_clock (48 * 1000 * 1000) ; Run the edbus PIO state
                                                   ; machines at 48MHz.
 
-.define public edbus_busy 7       ; Use IRQ 7 to represent when the bus is
+.define public edbus_busy_irq 7   ; Use IRQ 7 to represent when the bus is
                                   ; busy.
 
 .program edbus_tx                 ; The edbus_tx program begins here.
 
-.define public error 0            ; Use IRQ 0 to represent an error to the CPU.
+.define public error_irq 0        ; Use IRQ 0 to represent an error to the CPU.
 
-.define public done 1             ; Use IRQ 1 to represent when a transmission
+.define public done_irq 1         ; Use IRQ 1 to represent when a transmission
                                   ; completed successfully to the CPU.
 
 .side_set 2 pindirs               ; This program will manipulate the state of 
@@ -21,33 +21,34 @@
                                   ; state of both the EBD (data) pin and the
                                   ; EBC (clock) pin.
 
-word:
- pull block             side 0b00 
+write_word:
+ pull block                 side 0b00     
 write_bit:
- out y, 1               side 0b00
- jmp !y write_zero      side 0b00
+ out y, 1                   side 0b00     
+ jmp !y write_zero          side 0b00     
 write_one:
- nop                    side 0b11 [2]
- jmp pin next_bit       side 0b11
- irq wait error         side 0b11
+ nop                        side 0b11 [3] 
+ jmp pin next_bit           side 0b11 
+ irq wait error_irq         side 0b11     
 public entry_point:
- pull block             side 0b11
- wait 0 irq, edbus_busy side 0b11
- jmp next_bit           side 0b10 [7]
+.wrap_target
+ pull block                 side 0b11
+ wait 0 irq, edbus_busy_irq side 0b11
+ jmp next_bit               side 0b10 [7]
 write_zero:
- nop                    side 0b01 [3]
+ nop                        side 0b01 [4]
 next_bit:
- jmp !osre write_bit    side 0b00
- jmp x-- word           side 0b00
- irq wait done          side 0b11 [7]
+ jmp !osre write_bit        side 0b00
+next_word:
+ jmp x-- write_word         side 0b00
+finsh:
+ irq wait done_irq          side 0b11 [7]
+.wrap
 
 % c-sdk {
 
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
-
-static inline void edbus_tx_resetup_after_irq(PIO pio, uint sm) {
-}
 
 // edbus_tx_program_init initialises the edbus_tx program.
 // pin_ebd and pin_ebc must be sequential: pin_ebc must be 1 after pin_ebd.
@@ -141,78 +142,10 @@ static inline void edbus_tx_program_init(PIO pio, uint sm, uint offset,
 
 .program edbus_rx                 ; The edbus_rx program begins here.
 
-reset:
-.wrap_target                      ; When the .wrap position is reached,
-                                  ; execution will continue from .wrap_target.
-
-  irq clear edbus_busy            ; Clear the edbus_busy_irq. This indicates to
-                                  ; edbus_tx that the bus is currently 
-                                  ; inactive.
-wait_start:
-  wait 0 pin, 1                   ; Wait for EBC to go low, potentially 
-                                  ; indicating a start condition.
-
-  irq nowait edbus_busy           ; Set the edbus_busy_irq to prevent edbus_tx
-                                  ; from starting a transmission whilst the bus
-                                  ; is busy.
-
-  set x, 7            [1]         ; Prepare register x with the value 7.
-                                  ; Register x stores the number of words to be
-                                  ; received minus 1 (8 - 1 = 7).
-                                  ; Then, wait another cycle so that the next
-                                  ; instruction is correctly timed.
-
-  jmp pin, wait_end   [1]         ; If EBC is now high, three cycles after it
-                                  ; was detected as low, this is not the start
-                                  ; of a transmission, but somewhere in the
-                                  ; middle, so jump to the 'wait_end' label to
-                                  ; wait for the current transmission to end.
-                                  ; Otherwise, this is the start of a
-                                  ; transmission, so continue. Then, in either 
-                                  ; case, wait another cycle. 
-read_word:
-  set y, 31                       ; Set register y to 31. Register y stores the
-                                  ; number of bits to be received minus 1
-                                  ; (32 - 1 = 31).
-read_bit:
-  wait 1 pin, 1       [2]         ; Wait for EBC to go high, then wait another
-                                  ; 2 cycles. The extra two-cycle wait gives 
-                                  ; the EBD line time to stabilise before its
-                                  ; value is read.
-
-  in pins, 1                      ; Read the state of the EBD pin, and shift
-                                  ; its value (one bit) into the Input Shift
-                                  ; Register (ISR).
-next_bit:
-  jmp y--, read_bit               ; If the y register is not 0, jump to the
-                                  ; 'read_bit' label. Otherwise, fall through.
-                                  ; Then, in either case, decrement y.
-next_word:
-  push noblock                    ; Take one word (32 bits) from the ISR and
-                                  ; put it into the RX FIFO. If the RX FIFO is
-                                  ; full, do not stall, just discard the data
-                                  ; and continue. Stalling is prohibited here,
-                                  ; as maintaining correct timing whilst
-                                  ; reading from the bus is critical.
-
-  jmp x--, read_word              ; If the x register is not 0, jump to the
-                                  ; 'read_word' label. Otherwise, fall through
-                                  ; to the wrap. Then, in either case,
-                                  ; decrement x.
-
-.wrap                             ; Wrap back to the .wrap_target position.
-
-wait_end:
-  wait 1 pin, 1       [3]         ; Wait for EBC to go high, then wait another
-                                  ; 3 cycles.
-
-  jmp pin, reset                  ; If the EBC pin is still high, three cycles
-                                  ; after it was detected as high, this is the 
-                                  ; end of a transmission, so jump back to the
-                                  ; 'reset' label. Otherwise, fall through to
-                                  ; the unconditional jump.
-
-  jmp wait_end                    ; Jump back to the 'wait_end' label.
+find_start:
+ wait 0 pin, 1       []
+ jmp pin find_start
+; TODO TODO TODO
 
 % c-sdk {
 

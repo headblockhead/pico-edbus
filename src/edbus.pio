@@ -28,15 +28,15 @@ write_bit:
  jmp !y write_zero          side 0b00     
 write_one:
  nop                        side 0b11 [3] 
- jmp pin next_bit           side 0b11 
+ jmp pin next_bit           side 0b11
  irq wait error_irq         side 0b11     
 public entry_point:
 .wrap_target
  pull block                 side 0b11
  wait 0 irq, edbus_busy_irq side 0b11
- jmp next_bit               side 0b10 [7]
+ jmp next_bit               side 0b01 [7]
 write_zero:
- nop                        side 0b01 [4]
+ nop                        side 0b10 [4]
 next_bit:
  jmp !osre write_bit        side 0b00
 next_word:
@@ -65,7 +65,7 @@ static inline void edbus_tx_program_init(PIO pio, uint sm, uint offset,
     sm_config_set_jmp_pin(&c, pin_ebd); 
     // Assign the EBD pin as the 1st pin controlled by the side-set. This 
     // allows the EBC pin to be controlled as the 2nd side-set pin.
-    sm_config_set_sideset_pins(&c, pin_ebc);
+    sm_config_set_sideset_pins(&c, pin_ebd);
 
     // Join the 4 word deep RX and TX FIFO buffers into one large 8-deep 
     // TX FIFO buffer, as this program only uses TX.
@@ -142,10 +142,7 @@ static inline void edbus_tx_program_init(PIO pio, uint sm, uint offset,
 
 .program edbus_rx                 ; The edbus_rx program begins here.
 
-find_start:
- wait 0 pin, 1       []
- jmp pin find_start
-; TODO TODO TODO
+; TODO
 
 % c-sdk {
 

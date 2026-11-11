@@ -4,7 +4,7 @@ if(NOT TARGET pico-edbus::pico-edbus)
   add_library(pico-edbus::pico-edbus STATIC IMPORTED)
   
   set_target_properties(pico-edbus::pico-edbus PROPERTIES
-    IMPORTED_LOCATION "${PACKAGE_PREFIX_DIR}/lib/pico-edbus.a"
+    IMPORTED_LOCATION "${PACKAGE_PREFIX_DIR}/lib/libpico-edbus.a"
     INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/include"
   )
 endif()

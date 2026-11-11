@@ -142,7 +142,7 @@ static inline void edbus_tx_program_init(PIO pio, uint sm, uint offset,
 
 .program edbus_rx                 ; The edbus_rx program begins here.
 
-; TODO
+nop ; TODO
 
 % c-sdk {
 

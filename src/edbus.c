@@ -10,25 +10,6 @@
 #include <stdio.h>
 #include <string.h>
 
-// edbus_config structs should only be manipulated using the set functions, so
-// the full struct definition is kept out of the public header.
-struct edbus_config {
-  PIO pio;
-  uint rx_sm;
-  uint tx_sm;
-  uint pio_irq_num;
-
-  uint dma_chan_rx;
-  uint dma_chan_tx;
-  uint dma_irq_num;
-
-  uint pin_ebd;
-  uint pin_ebc;
-
-  edbus_message_handler_t message_handler;
-  edbus_event_handler_t event_handler;
-};
-
 // message_outbound is a buffer where messages are stored before transmission.
 // This is useful for automatic retransmission from arbitration losses.
 static edbus_message_t message_outbound;
@@ -42,6 +23,9 @@ static edbus_message_t message_inbound;
 
 // config is an instance of an edbus_config struct, which holds the values used
 // to run the edbus.
+// For now, there is only one instance of edbus_config, meaning only one
+// edbus can operate per pico.
+// This is due to be improved in a future relase of this library.
 static edbus_config_t config;
 
 // check_config is a debugging tool that uses assertions to check that config
@@ -50,7 +34,7 @@ static edbus_config_t config;
 // This means check_config only has an effect when assertions are explicitly
 // enabled during a debug build.
 static void check_config(const edbus_config_t *c) {
-  check_pio_param(c->pio);
+  check_pio_param(PIO_INSTANCE(c->pio_num));
   check_sm_param(c->rx_sm);
   check_sm_param(c->tx_sm);
   invalid_params_if(HARDWARE_PIO, c->pio_irq_num >= NUM_PIO_IRQS);
@@ -68,11 +52,10 @@ edbus_config_t edbus_get_default_config(unsigned int pin_ebd,
                                         unsigned int pin_ebc,
                                         edbus_message_handler_t message_handler,
                                         edbus_event_handler_t event_handler) {
+  // Defaults:
   return (edbus_config_t){
-      // Defaults:
-
       // PIO 0, state machines 0 and 1.
-      .pio = pio0,
+      .pio_num = 0,
       .rx_sm = 0,
       .tx_sm = 1,
 
@@ -98,7 +81,7 @@ edbus_config_t edbus_get_default_config(unsigned int pin_ebd,
 
 void edbus_config_set_pio(edbus_config_t *c, unsigned int pio_num,
                           unsigned int rx_sm, unsigned int tx_sm) {
-  c->pio = PIO_INSTANCE(pio_num);
+  c->pio_num = pio_num;
   c->rx_sm = rx_sm;
   c->tx_sm = tx_sm;
   check_config(c);
@@ -137,17 +120,19 @@ void edbus_config_set_event_handler(edbus_config_t *c,
 // init_pio_program_rx writes the RX program into the PIO instruction memory,
 // and calls the program's init function.
 static void init_pio_program_rx() {
-  uint offset_rx = pio_add_program(config.pio, &edbus_rx_program);
-  edbus_rx_program_init(config.pio, config.rx_sm, offset_rx, config.pin_ebd,
-                        config.pin_ebc);
+  uint offset_rx =
+      pio_add_program(PIO_INSTANCE(config.pio_num), &edbus_rx_program);
+  edbus_rx_program_init(PIO_INSTANCE(config.pio_num), config.rx_sm, offset_rx,
+                        config.pin_ebd, config.pin_ebc);
 }
 
 // init_pio_program_tx writes the TX program into the PIO instruction memory,
 // and calls the program's init function.
 static void init_pio_program_tx() {
-  uint offset_tx = pio_add_program(config.pio, &edbus_tx_program);
-  edbus_tx_program_init(config.pio, config.tx_sm, offset_tx, config.pin_ebd,
-                        config.pin_ebc);
+  uint offset_tx =
+      pio_add_program(PIO_INSTANCE(config.pio_num), &edbus_tx_program);
+  edbus_tx_program_init(PIO_INSTANCE(config.pio_num), config.tx_sm, offset_tx,
+                        config.pin_ebd, config.pin_ebc);
 }
 
 // pio_get_interrupt_source converts an IRQ number in a PIO block into an
@@ -163,7 +148,7 @@ static pio_interrupt_source_t pio_get_interrupt_source(uint interrupt) {
 
 // pio_irq_handler is called when the edbus PIO block raises an IRQ.
 static void pio_irq_handler() {
-  if (pio_interrupt_get(config.pio, edbus_tx_error_irq)) {
+  if (pio_interrupt_get(PIO_INSTANCE(config.pio_num), edbus_tx_error_irq)) {
     // RP2040-E13 and RP2350-E5
     hw_clear_bits(&dma_hw->ch[config.dma_chan_tx].al1_ctrl,
                   DMA_CH0_CTRL_TRIG_EN_BITS);
@@ -174,20 +159,20 @@ static void pio_irq_handler() {
     hw_set_bits(&dma_hw->ch[config.dma_chan_tx].al1_ctrl,
                 DMA_CH0_CTRL_TRIG_EN_BITS);
 
-    pio_sm_clear_fifos(config.pio, config.tx_sm);
+    pio_sm_clear_fifos(PIO_INSTANCE(config.pio_num), config.tx_sm);
 
-    pio_sm_exec(config.pio, config.tx_sm,
+    pio_sm_exec(PIO_INSTANCE(config.pio_num), config.tx_sm,
                 pio_encode_set(pio_x, 7) | pio_encode_sideset(2, 0b11));
-    pio_interrupt_clear(config.pio, edbus_tx_error_irq);
+    pio_interrupt_clear(PIO_INSTANCE(config.pio_num), edbus_tx_error_irq);
 
     config.event_handler(EDBUS_EVENT_TX_ARBITRATION_LOSS_RETRY);
 
     dma_channel_set_read_addr(config.dma_chan_tx, message_outbound, true);
   }
-  if (pio_interrupt_get(config.pio, edbus_tx_done_irq)) {
-    pio_sm_exec(config.pio, config.tx_sm,
+  if (pio_interrupt_get(PIO_INSTANCE(config.pio_num), edbus_tx_done_irq)) {
+    pio_sm_exec(PIO_INSTANCE(config.pio_num), config.tx_sm,
                 pio_encode_set(pio_x, 7) | pio_encode_sideset(2, 0b11));
-    pio_interrupt_clear(config.pio, edbus_tx_done_irq);
+    pio_interrupt_clear(PIO_INSTANCE(config.pio_num), edbus_tx_done_irq);
 
     config.event_handler(EDBUS_EVENT_TX_DONE);
 
@@ -209,10 +194,11 @@ static void init_pio_irq() {
       pio_get_interrupt_source(edbus_tx_done_irq);
   uint32_t irq_source_mask =
       (1 << irq_source_tx_error) | (1 << irq_source_tx_done);
-  pio_set_irqn_source_mask_enabled(config.pio, config.pio_irq_num,
-                                   irq_source_mask, true);
+  pio_set_irqn_source_mask_enabled(PIO_INSTANCE(config.pio_num),
+                                   config.pio_irq_num, irq_source_mask, true);
 
-  uint nvic_irq_num_pio = pio_get_irq_num(config.pio, config.pio_irq_num);
+  uint nvic_irq_num_pio =
+      pio_get_irq_num(PIO_INSTANCE(config.pio_num), config.pio_irq_num);
   irq_add_shared_handler(nvic_irq_num_pio, pio_irq_handler,
                          PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
   irq_set_enabled(nvic_irq_num_pio, true);
@@ -229,14 +215,15 @@ static void init_dma_rx() {
   channel_config_set_transfer_data_size(&dma_config_rx, DMA_SIZE_32);
   channel_config_set_read_increment(&dma_config_rx, false);
   channel_config_set_write_increment(&dma_config_rx, true);
-  uint dreq_rx = pio_get_dreq(config.pio, config.rx_sm, false);
+  uint dreq_rx =
+      pio_get_dreq(PIO_INSTANCE(config.pio_num), config.rx_sm, false);
   channel_config_set_dreq(&dma_config_rx, dreq_rx);
   channel_config_set_sniff_enable(&dma_config_rx, true);
   dma_sniffer_set_data_accumulator(0xFFFFFFFF);
   dma_sniffer_set_byte_swap_enabled(true);
   dma_sniffer_enable(config.dma_chan_rx, DMA_SNIFF_CTRL_CALC_VALUE_CRC32, true);
   dma_channel_configure(config.dma_chan_rx, &dma_config_rx, message_inbound,
-                        &config.pio->rxf[config.rx_sm],
+                        &(PIO_INSTANCE(config.pio_num)->rxf[config.rx_sm]),
                         dma_encode_transfer_count(8), false);
 }
 
@@ -249,11 +236,11 @@ static void init_dma_tx() {
   channel_config_set_transfer_data_size(&dma_config_tx, DMA_SIZE_32);
   channel_config_set_read_increment(&dma_config_tx, true);
   channel_config_set_write_increment(&dma_config_tx, false);
-  uint dreq_tx = pio_get_dreq(config.pio, config.tx_sm, true);
+  uint dreq_tx = pio_get_dreq(PIO_INSTANCE(config.pio_num), config.tx_sm, true);
   channel_config_set_dreq(&dma_config_tx, dreq_tx);
   dma_channel_configure(config.dma_chan_tx, &dma_config_tx,
-                        &config.pio->txf[config.tx_sm], message_outbound,
-                        dma_encode_transfer_count(8), false);
+                        &(PIO_INSTANCE(config.pio_num)->txf[config.tx_sm]),
+                        message_outbound, dma_encode_transfer_count(8), false);
 }
 
 // dma_irq_handler is called when a DMA channel raises an IRQ.

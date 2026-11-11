@@ -42,7 +42,22 @@ typedef enum edbus_event {
 typedef void (*edbus_event_handler_t)(edbus_event_t event);
 
 // edbus_config_t is a type of struct containing edbus's internal configuration.
-typedef struct edbus_config edbus_config_t;
+typedef struct edbus_config {
+  unsigned pio_num;
+  unsigned rx_sm;
+  unsigned tx_sm;
+  unsigned pio_irq_num;
+
+  unsigned dma_chan_rx;
+  unsigned dma_chan_tx;
+  unsigned dma_irq_num;
+
+  unsigned pin_ebd;
+  unsigned pin_ebc;
+
+  edbus_message_handler_t message_handler;
+  edbus_event_handler_t event_handler;
+} edbus_config_t;
 
 // edbus_get_default_config returns an edbus_config struct with default values.
 // pin_ebc must be sequentially after (+1 from) pin_ebd.

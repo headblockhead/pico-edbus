@@ -2,8 +2,8 @@
                                   ; version 0, so are compatible with any
                                   ; rp2040 or greater PIO hardware.
 
-.define public edbus_pio_clock (48 * 1000 * 1000) ; Run the edbus PIO state
-                                                  ; machines at 48MHz.
+.define public edbus_pio_clock (125 * 1000 * 1000) ; Run the edbus PIO state
+                                                   ; machines at 125MHz.
 
 .define public edbus_busy_irq 7   ; Use IRQ 7 to represent when the bus is
                                   ; busy.

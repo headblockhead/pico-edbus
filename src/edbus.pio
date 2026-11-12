@@ -142,7 +142,15 @@ static inline void edbus_tx_program_init(PIO pio, uint sm, uint offset,
 
 .program edbus_rx                 ; The edbus_rx program begins here.
 
-nop ; TODO
+wait_start:
+.wrap_target
+  wait 0 pin 1 ; wait on EBC to go low
+  jmp pin detected_tx ; if EBD is high, detected TX start
+.wrap
+detected_tx:
+  irq nowait edbus_busy_irq
+  wait 1 pin 1 ; wait ebc to go high
+  in pins, 1 ; read value of ebd
 
 % c-sdk {
 
